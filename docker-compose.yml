@@ -1,0 +1,63 @@
+version: '3.8'
+
+services:
+  db:
+    image: postgres:13-alpine
+    restart: always
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: transactions_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    networks:
+      - backend
+
+  redis_db:
+    image: redis:6
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+
+  backend:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db/transactions_db
+      CELERY_BROKER_URL: redis://redis_db:6379/0
+      CELERY_RESULT_BACKEND: redis://redis_db:6379/0
+      API_KEY: your_secure_api_key
+      REDIS_HOST: redis_db
+    depends_on:
+      - db
+      - redis_db
+    ports:
+      - "8000:8000"
+    command: >
+      uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    networks:
+      - backend
+
+  celery_worker:
+    build: .
+    environment:
+      DATABASE_URL: postgresql://postgres:postgres@db/transactions_db
+      CELERY_BROKER_URL: redis://redis_db:6379/0
+      CELERY_RESULT_BACKEND: redis://redis_db:6379/0
+      REDIS_HOST: redis_db
+    command: celery -A app.service.celery_app worker --loglevel=info
+    depends_on:
+      - redis_db
+      - db
+    networks:
+      - backend
+
+volumes:
+  pgdata:
+
+networks:
+  backend:
+    driver: bridge
+    name: backend
